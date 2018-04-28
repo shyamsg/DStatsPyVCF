@@ -5,7 +5,7 @@ One important note is that the vcf file used must be an all sites - all sample
 vcf, not a polymorphisms only or a single sample vcf. The statistics computed
 in this script are computed using math presented in the African paper, and in
 Skoglund et al. The vcf file has to be sorted, will not be checked but ... if it
-is not.. then trouble!!!!!
+is not.. then trouble!!!
 """
 __author__ = "Shyam Gopalakrishnan <shyam@snm.ku.dk>"
 __date__ = "15th March 2018"
@@ -192,7 +192,7 @@ def computeBlockJackknifeEstimates(genoCounts):
             blockVariance[pair, index] = np.sum((weights/(1-weights))*((blockEstimate[pair, index] - pseudoValues)**2))/nblocks
     return((overallEstimate, blockEstimate, blockVariance))
 
-def jackknife(fileOfVals, blockSize):
+def jackknife(fileOfVals, blockSize, outfile):
     """Compute jackknife estimates of the split time for each pair of samples.
 
     Reads the output file from the split time estimate, compute jack knife estimates
@@ -201,6 +201,7 @@ def jackknife(fileOfVals, blockSize):
     Args:
         fileOfVals: file with value of genoclass at each site, for each pair.
         blockSize: Size of block for the jackknife.
+        outfile: file to write jackknife estimates to.
 
     Returns:
         Jackknife estimate, overall estimate, sdev of the split times.
@@ -240,7 +241,21 @@ def jackknife(fileOfVals, blockSize):
     genoCountsBlock = np.array(genoCountsBlock)
     # Done with counting genotype classes in blocks.
     # So now call the workhorse function.
-    computeBlockJackknifeEstimates(genoCountsBlock)
+    estimatesAndVars = computeBlockJackknifeEstimates(genoCountsBlock)
+    outf = open(outfile, "w")
+    outf.write("S1\tS2\tO\tT1\tT1.BJK\tSE(T2).BJK\tT2\tT2.BJK\tSE(T2).BJK\n")
+    for pair in xrange(npairs):
+        snames = samps[pair].split(",")
+        outf.write("\t".join(snames)+"\t")
+        outf.write(str(np.round(estimatesAndVars[0][pair,0],2))+"\t")
+        outf.write(str(np.round(estimatesAndVars[1][pair,0],2))+"\t")
+        outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,0]),4))+"\t")
+        outf.write(str(np.round(estimatesAndVars[0][pair,1],2))+"\t")
+        outf.write(str(np.round(estimatesAndVars[1][pair,1],2))+"\t")
+        outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,1]),4))+"\n")
+    outf.close()
+
+
 
 def main(args):
     """The boss function. Calls all the subfunctions - engineers, pointy haired
@@ -265,7 +280,7 @@ def main(args):
     ## key is tuple (chr, pos) and value is array
     ## of array of genotype counts - 1 per sample
     ## configuration.
-    outfile = open(args.output, "w")
+    outfile = open(args.outroot + ".genoCounts", "w")
     outfile.write("Chrom\tPosition\t")
     outfile.write("\t".join([x+","+y+","+z for x,y,z in sampleConfigs]))
     outfile.write("\n")
@@ -277,7 +292,7 @@ def main(args):
         outfile.write("\t".join(genoClass))
         outfile.write("\n")
     outfile.close()
-    jackknife(outfile, args.blocksize)
+    jackknife(args.outroot + ".genoCounts", args.blocksize, args.outroot + ".ttout")
 
 if __name__ == "__main__":
     ## Write the argument parser.
@@ -294,10 +309,10 @@ if __name__ == "__main__":
         required=True,
         type=str)
 
-    parser.add_argument("-o", "--output",
-        help="output file name.",
+    parser.add_argument("-o", "--outroot",
+        help="output files root name.",
         required=False,
-        default="",
+        default="test",
         type=str)
 
     parser.add_argument("-d", "--min-depth",
@@ -327,7 +342,5 @@ if __name__ == "__main__":
         type=int)
 
     args = parser.parse_args()
-    if args.output == "":
-        args.output = args.vcf + ".ttout"
 
     main(args)
