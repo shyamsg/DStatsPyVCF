@@ -180,13 +180,13 @@ def computeBlockJackknifeEstimates(genoCounts):
         temp = computeSplitTime(genoCountsCur, 1, 1)
         overallEstimate[pair, 0] = temp[0]
         overallEstimate[pair, 1] = temp[1]
-    blockEstimate = np.zeros((npairs,2
+    blockEstimate = np.zeros((npairs,2))
     for pair in xrange(npairs):
         totsnps = np.sum(nsnps[:,pair])*1.0
         weights = (1-nsnps[:,pair]/totsnps)
         for index in xrange(2):
-            blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] -
-                                         np.sum(weights*estimatesJackknife[:, pair, index])
+            blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] \
+                                         - np.sum(weights*estimatesJackknife[:, pair, index])
             pseudoValues = (overallEstimate[pair, index] - (1.0-weights)*estimatesJackknife[:, pair, index])
             pseudoValues = pseudoValues / weights
             blockVariance[pair, index] = np.sum((weights/(1-weights))*((blockEstimate[pair, index] - pseudoValues)**2))/nblocks
@@ -254,7 +254,6 @@ def jackknife(fileOfVals, blockSize, outfile):
         outf.write(str(np.round(estimatesAndVars[1][pair,1],2))+"\t")
         outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,1]),4))+"\n")
     outf.close()
-
 
 
 def main(args):
