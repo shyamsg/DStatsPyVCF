@@ -59,7 +59,7 @@ def countGenotypeCombinationsSampled(vcfrecord, sampleConfigs, mind, maxd):
                 genoClass.append("-1")
                 continue
             ogeno = ocall['GT']
-            if ogeno == "./." or ogeno == "0/1":
+            if ogeno == "./." or ogeno == "0/1" or ogeno == "1/0":
                 genoClass.append("-1")
                 continue
             else:
@@ -74,8 +74,8 @@ def countGenotypeCombinationsSampled(vcfrecord, sampleConfigs, mind, maxd):
         else:
             if s1call['GT'] == "./." or s2call['GT'] == "./.":
                 genoClass.append("-1")
-            s1cnt = s1call['GT'].count(oallele)
-            s2cnt = s2call['GT'].count(oallele)
+            s1cnt = 2-s1call['GT'].count(oallele)
+            s2cnt = 2-s2call['GT'].count(oallele)
             if s1cnt == 0 and s2cnt == 0: genoClass.append(0)
             elif s1cnt == 1 and s2cnt == 0: genoClass.append(1)
             elif s1cnt == 0 and s2cnt == 1: genoClass.append(2)
@@ -114,7 +114,7 @@ def readSampleConfigFile(configFilename):
     configFile.close()
     return(sampleConfigs)
 
-def computeSplitTime(counts, generationTime, mutationRate):
+def computeSplitTime(counts, generationTime=3, mutationRate=4e-9):
     """Compute split time given the counts of configs, generation time and mu.
 
     Given a count of the different configurations, where sample 1 and sample 2
@@ -129,7 +129,10 @@ def computeSplitTime(counts, generationTime, mutationRate):
     Returns:
         List of 2 numbers, t1 and t2.
     """
-    f1 = generationTime / float(mutationRate*np.sum(counts))
+    totsites = np.sum(counts)
+    if totsites == 0:
+        return None, None
+    f1 = generationTime / float(mutationRate*totsites)
     f21 = (counts[2]/2.0) + counts[4]
     f22 = ((6*counts[6] + counts[5]) * (2*counts[7] + counts[5])) / (8*counts[5])
     t1 = f1 * (f21 - f22)
@@ -163,33 +166,37 @@ def computeBlockJackknifeEstimates(genoCounts):
     for b in xrange(nblocks):
         for pair in xrange(npairs):
             nsnps[b,pair] = np.sum(genoCounts[b,pair,:])
-    # compute block jack knife for each pair:
-    estimatesJackknife = np.zeros((nblocks, npairs, 2))
-    brange = np.arange(nblocks)
-    for b in xrange(nblocks):
-        brangeCur = np.delete(brange, b)
-        genoCountsCur = np.sum(genoCounts[brangeCur, :, :], axis=0)
-        for pair in xrange(npairs):
-            ## assume both gen and mut are 1, so no scaling
-            temp = computeSplitTime(genoCountsCur[pair,:], 1, 1)
-            estimatesJackknife[b, pair, 0] = temp[0]
-            estimatesJackknife[b, pair, 0] = temp[1]
+    print "NPairs:", npairs
+    print "NBlocks:", nblocks
     overallEstimate = np.zeros((npairs, 2))
     for pair in xrange(npairs):
-        genoCountsCur = np.sum(genoCounts, axis=0)
-        temp = computeSplitTime(genoCountsCur, 1, 1)
+        genoCountsCur = np.sum(genoCounts[:,pair,:], axis=0)
+        temp = computeSplitTime(genoCountsCur)
         overallEstimate[pair, 0] = temp[0]
         overallEstimate[pair, 1] = temp[1]
     blockEstimate = np.zeros((npairs,2))
-    for pair in xrange(npairs):
-        totsnps = np.sum(nsnps[:,pair])*1.0
-        weights = (1-nsnps[:,pair]/totsnps)
-        for index in xrange(2):
-            blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] \
-                                         - np.sum(weights*estimatesJackknife[:, pair, index])
-            pseudoValues = (overallEstimate[pair, index] - (1.0-weights)*estimatesJackknife[:, pair, index])
-            pseudoValues = pseudoValues / weights
-            blockVariance[pair, index] = np.sum((weights/(1-weights))*((blockEstimate[pair, index] - pseudoValues)**2))/nblocks
+    blockVariance = np.zeros((npairs,2))
+    if nblocks > 1:
+        # compute block jack knife for each pair:
+        estimatesJackknife = np.zeros((nblocks, npairs, 2))
+        brange = np.arange(nblocks)
+        for b in xrange(nblocks):
+            brangeCur = np.delete(brange, b)
+            genoCountsCur = np.sum(genoCounts[brangeCur, :, :], axis=0)
+            for pair in xrange(npairs):
+                ## assume both gen and mut are 1, so no scaling
+                temp = computeSplitTime(genoCountsCur[pair,:])
+                estimatesJackknife[b, pair, 0] = temp[0]
+                estimatesJackknife[b, pair, 0] = temp[1]
+        for pair in xrange(npairs):
+            totsnps = np.sum(nsnps[:,pair])*1.0
+            weights = (1-nsnps[:,pair]/totsnps)
+            for index in xrange(2):
+                blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] \
+                                             - np.sum(weights*estimatesJackknife[:, pair, index])
+                pseudoValues = (overallEstimate[pair, index] - (1.0-weights)*estimatesJackknife[:, pair, index])
+                pseudoValues = pseudoValues / weights
+                blockVariance[pair, index] = np.sum((weights/(1-weights))*((blockEstimate[pair, index] - pseudoValues)**2))/nblocks
     return((overallEstimate, blockEstimate, blockVariance))
 
 def jackknife(fileOfVals, blockSize, outfile):
@@ -225,36 +232,36 @@ def jackknife(fileOfVals, blockSize, outfile):
         chrom = line[0]
         block = int(int(line[1])/blockSize)
         ## This is new block, so add the
-        if chrom != curchrom or block != curblock:
-            genoCountBlocks.append(genoCountsCurBlock)
-            nsnpsBlock.append(nsnpsCurBlock)
+        if prevChrom != "" and (chrom != prevChrom or block != prevBlock):
+            genoCountsBlock.append(genoCountsCurBlock)
             genoCountsCurBlock = np.zeros((npairs, 9))
             nsnpsCurBlock = np.zeros((npairs))
         else:
             for x in xrange(npairs):
-                genoclass = genoclasses[x+2]
+                genoclass = genoclasses[x]
                 if genoclass == -1: continue
-                genoCountsCurBlock[x,genoclass] += 1
-                nsnpsCurBlock[x] += 1
+                genoCountsCurBlock[x, genoclass] += 1
         prevChrom = chrom
         prevBlock = block
+    if (np.sum(genoCountsCurBlock)) > 0:
+        genoCountsBlock.append(genoCountsCurBlock)
     genoCountsBlock = np.array(genoCountsBlock)
     # Done with counting genotype classes in blocks.
     # So now call the workhorse function.
-    estimatesAndVars = computeBlockJackknifeEstimates(genoCountsBlock)
-    outf = open(outfile, "w")
-    outf.write("S1\tS2\tO\tT1\tT1.BJK\tSE(T2).BJK\tT2\tT2.BJK\tSE(T2).BJK\n")
-    for pair in xrange(npairs):
-        snames = samps[pair].split(",")
-        outf.write("\t".join(snames)+"\t")
-        outf.write(str(np.round(estimatesAndVars[0][pair,0],2))+"\t")
-        outf.write(str(np.round(estimatesAndVars[1][pair,0],2))+"\t")
-        outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,0]),4))+"\t")
-        outf.write(str(np.round(estimatesAndVars[0][pair,1],2))+"\t")
-        outf.write(str(np.round(estimatesAndVars[1][pair,1],2))+"\t")
-        outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,1]),4))+"\n")
-    outf.close()
-
+    if (blockSize > 0):
+        estimatesAndVars = computeBlockJackknifeEstimates(genoCountsBlock)
+        outf = open(outfile, "w")
+        outf.write("S1\tS2\tO\tT1\tT1.BJK\tSE(T2).BJK\tT2\tT2.BJK\tSE(T2).BJK\n")
+        for pair in xrange(npairs):
+            snames = samps[pair].split(",")
+            outf.write("\t".join(snames)+"\t")
+            outf.write(str(np.round(estimatesAndVars[0][pair,0],2))+"\t")
+            outf.write(str(np.round(estimatesAndVars[1][pair,0],2))+"\t")
+            outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,0]),4))+"\t")
+            outf.write(str(np.round(estimatesAndVars[0][pair,1],2))+"\t")
+            outf.write(str(np.round(estimatesAndVars[1][pair,1],2))+"\t")
+            outf.write(str(np.round(np.sqrt(estimatesAndVars[2][pair,1]),4))+"\n")
+        outf.close()
 
 def main(args):
     """The boss function. Calls all the subfunctions - engineers, pointy haired
@@ -269,10 +276,10 @@ def main(args):
     Raises:
         IOError: When file is not found or raised by subfunctions.
     """
-    if args.vcf[-3:] == ".gz":
-        vcffile = gz.open(args.vcf, 'r')
-    else:
-        vcffile = open(args.vcf, 'r')
+    # if args.vcf[-3:] == ".gz":
+    #     vcffile = gz.open(args.vcf, 'r')
+    # else:
+    #     vcffile = open(args.vcf, 'r')
     sampleConfigs = readSampleConfigFile(args.sampleConfigs)
 
     ## Dictionary to store the array counts.
@@ -283,12 +290,12 @@ def main(args):
     outfile.write("Chrom\tPosition\t")
     outfile.write("\t".join([x+","+y+","+z for x,y,z in sampleConfigs]))
     outfile.write("\n")
-    reader = vcf.Reader(vcffile)
+    reader = vcf.Reader(filename=args.vcf)
     for record in reader:
-        genoClass = countGenotypeCombinations(record, sampleConfigs,
-                                              args.mind, args.maxd)
-        outfile.write(record.CHROM+"\t"+record.POS+"\t")
-        outfile.write("\t".join(genoClass))
+        genoClass = countGenotypeCombinationsSampled(record, sampleConfigs,
+                                                     args.mind, args.maxd)
+        outfile.write(record.CHROM+"\t"+str(record.POS)+"\t")
+        outfile.write("\t".join([str(x) for x in genoClass]))
         outfile.write("\n")
     outfile.close()
     jackknife(args.outroot + ".genoCounts", args.blocksize, args.outroot + ".ttout")
