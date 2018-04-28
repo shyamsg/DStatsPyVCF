@@ -248,7 +248,7 @@ def jackknife(fileOfVals, blockSize, outfile):
     genoCountsBlock = np.array(genoCountsBlock)
     # Done with counting genotype classes in blocks.
     # So now call the workhorse function.
-    if (blockSize > 0):
+    if (blockSize > 1):
         estimatesAndVars = computeBlockJackknifeEstimates(genoCountsBlock)
         outf = open(outfile, "w")
         outf.write("S1\tS2\tO\tT1\tT1.BJK\tSE(T2).BJK\tT2\tT2.BJK\tSE(T2).BJK\n")
