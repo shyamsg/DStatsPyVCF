@@ -187,7 +187,7 @@ def computeBlockJackknifeEstimates(genoCounts):
                 ## assume both gen and mut are 1, so no scaling
                 temp = computeSplitTime(genoCountsCur[pair,:])
                 estimatesJackknife[b, pair, 0] = temp[0]
-                estimatesJackknife[b, pair, 0] = temp[1]
+                estimatesJackknife[b, pair, 1] = temp[1]
         for pair in xrange(npairs):
             totsnps = np.sum(nsnps[:,pair])*1.0
             weights = (1-nsnps[:,pair]/totsnps)
@@ -245,10 +245,8 @@ def computeJackknifeEstimates(genoCounts):
                 ## assume both gen and mut are 1, so no scaling
                 temp = computeSplitTime(genoCountsCur[pair,:])
                 estimatesJackknife[b, pair, 0] = temp[0]
-                estimatesJackknife[b, pair, 0] = temp[1]
+                estimatesJackknife[b, pair, 1] = temp[1]
         for pair in xrange(npairs):
-            totsnps = np.sum(nsnps[:,pair])*1.0
-            weights = (1-nsnps[:,pair]/totsnps)
             for index in xrange(2):
                 blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] \
                                              - (nblocks - 1)*np.mean(estimatesJackknife[:, pair, index])
