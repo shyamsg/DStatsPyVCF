@@ -199,6 +199,62 @@ def computeBlockJackknifeEstimates(genoCounts):
                 blockVariance[pair, index] = np.sum((weights/(1-weights))*((blockEstimate[pair, index] - pseudoValues)**2))/nblocks
     return((overallEstimate, blockEstimate, blockVariance))
 
+def computeJackknifeEstimates(genoCounts):
+    """Compute the jackknife estimates of t1 and t2 given the counts of geno classes
+    in each block.
+
+    Takes in the lists of genoypte class counts many blocks and returns the total
+    estimate, the block jackknife estimate, and the block jackknife estimate of
+    the variance.
+
+    Args:
+        genoCounts: counts of the genotype classes, one for each block.
+
+    Returns:
+        A list of 3 items (each one a pair): the overall estimate of t1 and t2,
+        the block jackknife estimate of t1 and t2, and the variance of t1 and t2.
+
+    Raises:
+        ValueError: When the genoCounts is empty.
+    """
+    npairs = np.shape(genoCounts)[1]
+    nblocks = np.shape(genoCounts)[0]
+    nsnps = np.zeros((nblocks, npairs))
+    # count number of snps for each pair in each block
+    for b in xrange(nblocks):
+        for pair in xrange(npairs):
+            nsnps[b,pair] = np.sum(genoCounts[b,pair,:])
+    print "NPairs:", npairs
+    print "NBlocks:", nblocks
+    overallEstimate = np.zeros((npairs, 2))
+    for pair in xrange(npairs):
+        genoCountsCur = np.sum(genoCounts[:,pair,:], axis=0)
+        temp = computeSplitTime(genoCountsCur)
+        overallEstimate[pair, 0] = temp[0]
+        overallEstimate[pair, 1] = temp[1]
+    blockEstimate = np.zeros((npairs,2))
+    blockVariance = np.zeros((npairs,2))
+    if nblocks > 1:
+        # compute block jack knife for each pair:
+        estimatesJackknife = np.zeros((nblocks, npairs, 2))
+        brange = np.arange(nblocks)
+        for b in xrange(nblocks):
+            brangeCur = np.delete(brange, b)
+            genoCountsCur = np.sum(genoCounts[brangeCur, :, :], axis=0)
+            for pair in xrange(npairs):
+                ## assume both gen and mut are 1, so no scaling
+                temp = computeSplitTime(genoCountsCur[pair,:])
+                estimatesJackknife[b, pair, 0] = temp[0]
+                estimatesJackknife[b, pair, 0] = temp[1]
+        for pair in xrange(npairs):
+            totsnps = np.sum(nsnps[:,pair])*1.0
+            weights = (1-nsnps[:,pair]/totsnps)
+            for index in xrange(2):
+                blockEstimate[pair, index] = nblocks*overallEstimate[pair, index] \
+                                             - (nblocks - 1)*np.mean(estimatesJackknife[:, pair, index])
+                blockVariance[pair, index] = ((nblocks-1.0)/nblocks)*np.sum((estimatesJackknife[:, pair, index] - np.mean(estimatesJackknife[:, pair, index]))**2)
+    return((overallEstimate, blockEstimate, blockVariance))
+
 def jackknife(fileOfVals, blockSize, outfile):
     """Compute jackknife estimates of the split time for each pair of samples.
 
